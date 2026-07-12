@@ -1,9 +1,4 @@
-// Phase 2 House Rules — layers on top of game-data.js (Phase 1, verified/faithful)
-// Kamikaze on ATTACK is themed after an official rule but is now a distinct custom mechanic (see mechanic field).
-// Submarine Concealment is a digital-adaptation mechanic — no hidden info in the physical board game.
-// All special units have resolved art (see iconAsset field on each).
-
-const HOUSE_RULES = {
+{
   "meta": {
     "description": "Phase 2 house rules layer. Extends the verified Phase 1 base data (game-data.json). None of this is required by the official rulebook except Kamikaze Attacks, which IS an official optional rule (Appendix 3, Japan National Advantage #2).",
     "appliesOnTopOf": "game-data.json"
@@ -196,6 +191,4 @@ const HOUSE_RULES = {
       "iconNote": "Badge applied at declaration time, not a separate purchasable unit \u2014 any Japanese bomber can be marked kamikaze pre-battle."
     }
   }
-};
-
-Object.freeze(HOUSE_RULES);
+}

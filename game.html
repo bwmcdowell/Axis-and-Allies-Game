@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Axis & Allies — Game Lobby</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; padding:0; background:#1a2530; color:#eee; font-family:-apple-system, system-ui, sans-serif; min-height:100%; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 24px 20px 60px; }
+  h1 { font-size: 26px; margin-bottom: 4px; }
+  .subtitle { color:#9aa5b1; font-size:15px; margin-bottom:24px; }
+  .card { background:#232f3d; border-radius:12px; padding:18px 20px; margin-bottom:16px; }
+  label { display:block; font-size:14px; color:#9aa5b1; margin-bottom:6px; }
+  input[type=text] { width:100%; padding:12px; border-radius:8px; border:1px solid #3a4a5c; background:#141c26; color:#eee; font-size:18px; margin-bottom:14px; }
+  button { font-size:17px; padding:12px 18px; border:none; border-radius:8px; background:#2a5a8a; color:#fff; cursor:pointer; }
+  button.secondary { background:#3a4a5c; }
+  button:disabled { opacity:.4; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .hidden { display:none !important; }
+  .code-display { font-size:34px; font-weight:700; letter-spacing:4px; text-align:center; padding:14px; background:#141c26; border-radius:8px; margin-bottom:14px; }
+  .power-row { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #2e3c4c; }
+  .power-row:last-child { border-bottom:none; }
+  .power-name { font-size:17px; font-weight:600; }
+  .power-claim { font-size:14px; color:#9aa5b1; }
+  .turn-banner { font-size:20px; font-weight:700; text-align:center; padding:16px; border-radius:10px; margin-bottom:14px; }
+  .turn-banner.mine { background:#2a5a2a; }
+  .turn-banner.theirs { background:#3a2a2a; }
+  .status-line { text-align:center; color:#9aa5b1; margin-bottom:16px; font-size:15px; }
+  .log { font-size:13px; color:#9aa5b1; max-height:160px; overflow-y:auto; }
+  .log div { padding:3px 0; border-bottom:1px solid #2e3c4c; }
+  details summary { cursor:pointer; font-size:15px; margin:8px 0; }
+  .terr-block { font-size:13px; padding:6px 0; border-bottom:1px solid #2e3c4c; }
+  .terr-name { font-weight:600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Axis & Allies Revised</h1>
+  <div class="subtitle" id="subtitle">Loading engine…</div>
+
+  <div id="screenEntry" class="card hidden">
+    <label for="nameInput">Your name</label>
+    <input type="text" id="nameInput" placeholder="e.g. Brian">
+    <div class="row">
+      <button id="createBtn">Create New Game</button>
+    </div>
+    <div style="margin-top:18px; border-top:1px solid #2e3c4c; padding-top:16px;">
+      <label for="codeInput">Have a game code?</label>
+      <input type="text" id="codeInput" placeholder="e.g. 4F9K" style="text-transform:uppercase;">
+      <button id="joinBtn" class="secondary">Join Game</button>
+    </div>
+  </div>
+
+  <div id="screenLobby" class="card hidden">
+    <div class="code-display" id="codeDisplay"></div>
+    <div class="status-line">Share this code with your friends</div>
+    <div id="powerList"></div>
+    <div class="row" style="margin-top:16px; justify-content:center;">
+      <button id="startBtn">Start Game</button>
+    </div>
+  </div>
+
+  <div id="screenGame" class="hidden">
+    <div class="turn-banner" id="turnBanner"></div>
+    <div class="status-line" id="youAre"></div>
+    <div class="row" style="justify-content:center; margin-bottom:18px;">
+      <button id="nextPhaseBtn">Next Phase</button>
+    </div>
+    <div class="card">
+      <details>
+        <summary>Board (your view)</summary>
+        <div id="boardView"></div>
+      </details>
+    </div>
+    <div class="card">
+      <div style="font-size:15px; margin-bottom:8px; font-weight:600;">Game Log</div>
+      <div class="log" id="logView"></div>
+    </div>
+  </div>
+</div>
+
+<script src="game-data.js"></script>
+<script src="house-rules.js"></script>
+<script src="engine-core.js"></script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+import {
+  getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAhF7RoYS6Ffqp_Ysy3qwSceWC2sTcTn2E",
+  authDomain: "axis-and-allies-game.firebaseapp.com",
+  projectId: "axis-and-allies-game",
+  storageBucket: "axis-and-allies-game.firebasestorage.app",
+  messagingSenderId: "744072298557",
+  appId: "1:744072298557:web:bd814926029eafa7ebea54",
+  measurementId: "G-01YSWH6RJD"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+document.getElementById('subtitle').textContent = 'Create a game or join one with a code';
+document.getElementById('screenEntry').classList.remove('hidden');
+
+let clientId = localStorage.getItem('aa_clientId');
+if (!clientId) {
+  clientId = crypto.randomUUID();
+  localStorage.setItem('aa_clientId', clientId);
+}
+document.getElementById('nameInput').value = localStorage.getItem('aa_name') || '';
+
+let currentCode = null;
+let myPower = null;
+let latestState = null;
+
+function genCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+async function createGame() {
+  const name = document.getElementById('nameInput').value.trim() || 'Player';
+  localStorage.setItem('aa_name', name);
+  const code = genCode();
+  const claims = {};
+  GAME_DATA.players.forEach(p => claims[p.id] = null);
+  await setDoc(doc(db, 'games', code), {
+    code, createdAt: Date.now(), claims, started: false, state: null
+  });
+  enterLobby(code);
+}
+
+async function joinGame() {
+  const name = document.getElementById('nameInput').value.trim() || 'Player';
+  localStorage.setItem('aa_name', name);
+  const code = document.getElementById('codeInput').value.trim().toUpperCase();
+  if (!code) return;
+  const snap = await getDoc(doc(db, 'games', code));
+  if (!snap.exists()) {
+    alert('No game found with that code.');
+    return;
+  }
+  enterLobby(code);
+}
+
+function enterLobby(code) {
+  currentCode = code;
+  myPower = localStorage.getItem('aa_power_' + code) || null;
+  document.getElementById('screenEntry').classList.add('hidden');
+  document.getElementById('codeDisplay').textContent = code;
+  document.getElementById('subtitle').textContent = 'Game ' + code;
+
+  onSnapshot(doc(db, 'games', code), (snap) => {
+    if (!snap.exists()) return;
+    const data = snap.data();
+    if (data.started && data.state) {
+      latestState = data.state;
+      showGameScreen();
+      renderGame();
+    } else {
+      showLobbyScreen();
+      renderPowerList(data.claims);
+    }
+  });
+}
+
+function showLobbyScreen() {
+  document.getElementById('screenLobby').classList.remove('hidden');
+  document.getElementById('screenGame').classList.add('hidden');
+}
+function showGameScreen() {
+  document.getElementById('screenLobby').classList.add('hidden');
+  document.getElementById('screenGame').classList.remove('hidden');
+}
+
+function renderPowerList(claims) {
+  const el = document.getElementById('powerList');
+  el.innerHTML = '';
+  let anyClaimed = false;
+  GAME_DATA.players.forEach(p => {
+    const claimedBy = claims[p.id];
+    if (claimedBy) anyClaimed = true;
+    const row = document.createElement('div');
+    row.className = 'power-row';
+    const label = document.createElement('div');
+    label.className = 'power-name';
+    label.textContent = p.name;
+    const right = document.createElement('div');
+    if (claimedBy) {
+      right.className = 'power-claim';
+      right.textContent = claimedBy.name + (claimedBy.clientId === clientId ? ' (you)' : '');
+    } else {
+      const btn = document.createElement('button');
+      btn.className = 'secondary';
+      btn.textContent = 'Claim';
+      btn.onclick = () => claimPower(p.id);
+      right.appendChild(btn);
+    }
+    row.appendChild(label);
+    row.appendChild(right);
+    el.appendChild(row);
+  });
+  document.getElementById('startBtn').disabled = !anyClaimed;
+}
+
+async function claimPower(powerId) {
+  const name = localStorage.getItem('aa_name') || 'Player';
+  await updateDoc(doc(db, 'games', currentCode), {
+    ['claims.' + powerId]: { name, clientId }
+  });
+  myPower = powerId;
+  localStorage.setItem('aa_power_' + currentCode, powerId);
+}
+
+async function startGame() {
+  const state = GameEngine.initGameState(GAME_DATA, HOUSE_RULES);
+  await updateDoc(doc(db, 'games', currentCode), { started: true, state });
+}
+
+async function nextPhase() {
+  if (!latestState) return;
+  const newState = GameEngine.advancePhase(latestState);
+  await updateDoc(doc(db, 'games', currentCode), { state: newState });
+}
+
+function renderGame() {
+  const state = latestState;
+  const currentPlayerId = GameEngine.getCurrentPlayerId(state);
+  const currentPlayer = GAME_DATA.players.find(p => p.id === currentPlayerId);
+  const phase = GameEngine.getCurrentPhase(state);
+  const isMyTurn = myPower === currentPlayerId;
+
+  const banner = document.getElementById('turnBanner');
+  banner.textContent = 'Round ' + state.round + ' — ' + currentPlayer.name + ' — ' + GameEngine.PHASE_DISPLAY[phase];
+  banner.className = 'turn-banner ' + (isMyTurn ? 'mine' : 'theirs');
+
+  document.getElementById('youAre').textContent = myPower
+    ? 'You are playing: ' + GAME_DATA.players.find(p => p.id === myPower).name
+    : 'You have not claimed a power in this game';
+
+  const nextBtn = document.getElementById('nextPhaseBtn');
+  nextBtn.disabled = !isMyTurn;
+  nextBtn.textContent = isMyTurn ? 'Next Phase' : 'Waiting on ' + currentPlayer.name + '…';
+
+  const boardEl = document.getElementById('boardView');
+  if (myPower) {
+    const view = GameEngine.getPlayerView(state, myPower, GAME_DATA, HOUSE_RULES);
+    let html = '';
+    Object.values(view.territories).forEach(t => {
+      if (t.units.length === 0) return;
+      const summary = {};
+      t.units.forEach(u => { summary[u.type + '|' + u.owner] = (summary[u.type + '|' + u.owner] || 0) + 1; });
+      const parts = Object.entries(summary).map(([k, qty]) => {
+        const [type, owner] = k.split('|');
+        return qty + '× ' + type + ' (' + owner + ')';
+      });
+      html += '<div class="terr-block"><span class="terr-name">' + t.name + ':</span> ' + parts.join(', ') + '</div>';
+    });
+    boardEl.innerHTML = html || '<div class="terr-block">No units visible.</div>';
+  } else {
+    boardEl.innerHTML = '<div class="terr-block">Claim a power to see your view of the board.</div>';
+  }
+
+  const logEl = document.getElementById('logView');
+  logEl.innerHTML = state.log.slice().reverse().map(e => '<div>Round ' + e.round + ' — ' + e.event + '</div>').join('');
+}
+
+document.getElementById('createBtn').addEventListener('click', createGame);
+document.getElementById('joinBtn').addEventListener('click', joinGame);
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('nextPhaseBtn').addEventListener('click', nextPhase);
+</script>
+</body>
+</html>
