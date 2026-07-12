@@ -1,0 +1,201 @@
+// Phase 2 House Rules — layers on top of game-data.js (Phase 1, verified/faithful)
+// Kamikaze on ATTACK is themed after an official rule but is now a distinct custom mechanic (see mechanic field).
+// Submarine Concealment is a digital-adaptation mechanic — no hidden info in the physical board game.
+// All special units have resolved art (see iconAsset field on each).
+
+const HOUSE_RULES = {
+  "meta": {
+    "description": "Phase 2 house rules layer. Extends the verified Phase 1 base data (game-data.json). None of this is required by the official rulebook except Kamikaze Attacks, which IS an official optional rule (Appendix 3, Japan National Advantage #2).",
+    "appliesOnTopOf": "game-data.json"
+  },
+  "toggles": {
+    "techs": {
+      "jetFighters": {
+        "researchable": true,
+        "description": "Fighters defend on 5 instead of 4."
+      },
+      "rockets": {
+        "researchable": true,
+        "description": "AA guns can rocket-strike enemy production."
+      },
+      "superSubmarines": {
+        "researchable": true,
+        "description": "Submarines attack on 3 instead of 2."
+      },
+      "longRangeAircraft": {
+        "researchable": true,
+        "description": "Fighters move 6 (was 4), bombers move 8 (was 6)."
+      },
+      "combinedBombardment": {
+        "researchable": true,
+        "description": "Destroyers can shore-bombard like battleships."
+      },
+      "heavyBombers": {
+        "researchable": true,
+        "description": "Bombers roll 2 dice on attack, still 1 on defense."
+      }
+    },
+    "startingTechs": {
+      "Russians": [],
+      "Germans": [],
+      "British": [],
+      "Japanese": [],
+      "Americans": []
+    },
+    "kamikazeAttacks": {
+      "enabled": false,
+      "appliesTo": "Japanese",
+      "isOfficialRule": false,
+      "relatedOfficialRule": "The rulebook (Appendix 3, Japan National Advantage #2) has a same-named but MECHANICALLY DIFFERENT rule: opening-fire only, guaranteed death regardless of outcome, no participation in normal combat. This house rule shares the theme/name but is a distinct custom mechanic \u2014 do not conflate the two.",
+      "appliesToAttack": true,
+      "appliesToDefense": true,
+      "mechanic": {
+        "participation": "The declared unit fights completely normally in the standard attacking/defending units fire step. No special opening-fire step, no guaranteed death.",
+        "dyingRollTrigger": "Only if the unit (a) is selected as a casualty this combat round AND (b) its own roll that round did NOT score a hit.",
+        "dyingRollEffect": "One bonus roll using the unit's normal attack (if attacking) or defense (if defending) value, resolved before the unit is removed from play.",
+        "dyingRollTarget": "Enemy sea units only, including submarines \u2014 subject to the SAME visibility/detection rules as any other attack (see submarineConcealment). A kamikaze dying roll cannot target a submarine that isn't currently detected/visible to the attacking or defending side. This does NOT bypass normal sub-detection.",
+        "onDyingRollHit": "Counts as one additional hit for the kamikaze unit's side, assigned to an eligible enemy sea unit under normal hit-assignment rules.",
+        "note": "If the unit's own roll already hit, or it wasn't selected as a casualty, there is no dying roll \u2014 it just resolves normally."
+      },
+      "declarationTiming": {
+        "onAttack": "During the Combat Move phase, when the attacking air units are moved into the target space.",
+        "onDefense": "After the attacker's Combat Move phase is announced/completed for that battle, before the Conduct Combat phase begins."
+      },
+      "description": "A declared kamikaze fighter/bomber fights normally. If it's killed in a round where its own roll missed, it gets one last 'dying' roll at its normal attack/defense value against an enemy sea unit (subs included, even without an enemy destroyer present) before being removed. A hit on that dying roll counts as an extra hit for its side."
+    },
+    "usIsolationism": {
+      "enabled": false,
+      "roundsLimit": 2,
+      "description": "Americans cannot declare an attack against an Axis-owned or Axis-controlled unit/territory (including US-owned China) until either 2 full rounds have completed, or the Americans have been attacked by an Axis power directly, whichever comes first. Once attacked, this restriction is permanently lifted for the rest of the game."
+    },
+    "specialUnits": {
+      "panzer": {
+        "enabled": false,
+        "owner": "Germans"
+      },
+      "longRangeBomber": {
+        "enabled": false,
+        "owner": "British"
+      },
+      "heavyBomberUnit": {
+        "enabled": false,
+        "owner": "Americans"
+      },
+      "cannonFodder": {
+        "enabled": false,
+        "owner": "Russians"
+      }
+    },
+    "submarineConcealment": {
+      "enabled": true,
+      "isOfficialRule": false,
+      "note": "Not a physical-board-game rule \u2014 the real board has no hidden information. This is a digital-adaptation mechanic to restore the 'stealth' theme submarines are supposed to have.",
+      "visibilityRule": {
+        "sameSide": "Always visible to its own side and allies (no detection needed).",
+        "enemySide": "Hidden from the enemy side UNLESS an enemy destroyer is within detectionRadius sea-zone hops of the submarine's current location."
+      },
+      "detectionRadius": 2,
+      "detectionRadiusUnit": "sea-zone hops via the existing adjacency/connection graph, not pixel/geographic distance",
+      "recalculation": "live \u2014 recomputed from current unit positions whenever visibility is checked; not a persistent/sticky reveal. Moving the detecting destroyer out of range re-hides the submarine.",
+      "effects": {
+        "mapVisibility": "An undetected enemy submarine is not shown on the map/UI to the enemy side.",
+        "targeting": "An undetected enemy submarine cannot be explicitly selected/targeted for attack, since the enemy has no way to know it's there.",
+        "interactionWithExistingRules": "Consistent with the base rule that a sea zone containing only enemy submarines does not stop enemy movement and is not considered hostile \u2014 an undetected sub simply behaves as if the zone were empty from the enemy's perspective. If an enemy destroyer ends up in the SAME sea zone as the submarine (a stricter condition than the 2-hop detection radius), the existing base-game submarine rules already force a stop/engage, independent of this detection mechanic."
+      }
+    }
+  },
+  "specialUnitDefinitions": {
+    "panzer": {
+      "id": "panzer",
+      "baseUnit": "tank",
+      "displayName": "Panzer",
+      "owner": "Germans",
+      "cost": 7,
+      "attack": 3,
+      "defense": 3,
+      "movement": 2,
+      "bonusMovement": {
+        "amount": 1,
+        "usableOnlyDuring": "noncombatMove",
+        "description": "Total movement is 3, but the 3rd space can only be used during the Noncombat Move phase, never during Combat Move or blitzing."
+      },
+      "canBlitz": true,
+      "needsDistinctIcon": false,
+      "iconNote": "Custom art created: standard tank icon, blue-steel tint, 'P' badge.",
+      "iconAsset": "Germans/panzer.png"
+    },
+    "longRangeBomber": {
+      "id": "longRangeBomber",
+      "baseUnit": "bomber",
+      "displayName": "Long-Range Bomber",
+      "owner": "British",
+      "cost": 15,
+      "attack": 4,
+      "defense": 1,
+      "movement": 7,
+      "isStrategicBomber": true,
+      "needsDistinctIcon": false,
+      "iconNote": "Not explicitly requested, but recommend a subtle visual distinction later so players can tell it apart from a standard bomber at a glance.",
+      "iconAsset": "British/bomber_lr.png"
+    },
+    "heavyBomberUnit": {
+      "id": "heavyBomberUnit",
+      "baseUnit": "bomber",
+      "displayName": "Heavy Bomber",
+      "owner": "Americans",
+      "cost": 20,
+      "attack": 4,
+      "attackDice": 2,
+      "defense": 1,
+      "defenseDice": 1,
+      "movement": 6,
+      "isStrategicBomber": true,
+      "needsDistinctIcon": false,
+      "iconNote": "Existing TripleA asset pack already includes this variant \u2014 no custom art needed.",
+      "overlapNote": "No mechanical conflict with the official Heavy Bombers tech: attackDice is a value, not additive, so a bomber never exceeds 2 dice regardless of which path granted it. If the US researches the tech, all their bombers (including plain ones) get 2 dice for free, which makes buying the pricier Heavy Bomber unit pointless from then on \u2014 no rule enforcement needed, it's just a bad purchase at that point.",
+      "iconAsset": "Americans/bomber_hb.png"
+    },
+    "cannonFodder": {
+      "id": "cannonFodder",
+      "baseUnit": "infantry",
+      "displayName": "Cannon Fodder",
+      "owner": "Russians",
+      "cost": 1,
+      "attack": 0,
+      "defense": 0,
+      "movement": 1,
+      "canCapture": false,
+      "restrictedProduction": {
+        "onlyAtTerritory": "Russia",
+        "description": "Can only be mobilized from the industrial complex in the Russia territory (Moscow), not any other Soviet factory."
+      },
+      "stackingRequirement": {
+        "requiresUnitType": "infantry",
+        "minRatio": 1,
+        "description": "Cannot exist in a stack/territory without at least one regular infantry present in the same stack."
+      },
+      "needsDistinctIcon": false,
+      "iconNote": "Custom art created: standard infantry icon, desaturated/lighter red tint, 'CF' badge.",
+      "designNote": "No special combat-priority rule needed: with 0 attack/0 defense it never scores a hit but can still be chosen as a casualty under the normal rules (defender picks which unit dies), which naturally produces the intended 'infantry + cannon fodder = 2 soakable hits for 4 IPC' effect.",
+      "iconAsset": "Russians/cannonFodder.png"
+    },
+    "kamikazeFighter": {
+      "id": "kamikazeFighter",
+      "baseUnit": "fighter",
+      "displayName": "Kamikaze Fighter (declared)",
+      "owner": "Japanese",
+      "iconAsset": "Japanese/fighter_kamikaze.png",
+      "iconNote": "Badge applied at declaration time, not a separate purchasable unit \u2014 any Japanese fighter can be marked kamikaze pre-battle."
+    },
+    "kamikazeBomber": {
+      "id": "kamikazeBomber",
+      "baseUnit": "bomber",
+      "displayName": "Kamikaze Bomber (declared)",
+      "owner": "Japanese",
+      "iconAsset": "Japanese/bomber_kamikaze.png",
+      "iconNote": "Badge applied at declaration time, not a separate purchasable unit \u2014 any Japanese bomber can be marked kamikaze pre-battle."
+    }
+  }
+};
+
+Object.freeze(HOUSE_RULES);
