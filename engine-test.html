@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Engine Skeleton Test</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, system-ui, sans-serif;
+    background: #f4f1ea; color: #2a2a2a; margin: 0; padding: 16px; font-size: 16px; line-height: 1.4;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .subtitle { color: #666; font-size: 13px; margin-bottom: 16px; }
+  .card { background: white; border-radius: 10px; padding: 14px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .card h2 { font-size: 15px; margin: 0 0 8px 0; color: #555; }
+  .big-status { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .phase-pill {
+    display: inline-block; padding: 4px 12px; border-radius: 14px; font-size: 13px;
+    background: #dceedc; color: #2d7a2d; font-weight: 600; margin-top: 4px;
+  }
+  button {
+    width: 100%; padding: 14px; font-size: 16px; font-weight: 600; border: none;
+    border-radius: 10px; margin-top: 8px; background: #2d5a8a; color: white;
+  }
+  button:active { background: #1f4570; }
+  button.secondary { background: #999; }
+  select {
+    width: 100%; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 8px; background: white;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td, th { padding: 5px 6px; border-bottom: 1px solid #eee; text-align: left; }
+  .log-entry { font-size: 12px; color: #666; padding: 3px 0; border-bottom: 1px dotted #ddd; }
+  .sub-hidden { color: #b8860b; font-style: italic; }
+  .territory-row { font-size: 13px; padding: 4px 0; border-bottom: 1px solid #f0f0f0; }
+</style>
+</head>
+<body>
+
+<h1>Engine Skeleton Test</h1>
+<div class="subtitle">State model + turn sequencer + submarine detection. No movement/combat yet — this just proves the skeleton works.</div>
+
+<div class="card">
+  <h2>Current Turn</h2>
+  <div class="big-status" id="currentPlayer"></div>
+  <div class="phase-pill" id="currentPhase"></div>
+  <div style="margin-top:8px; font-size:13px; color:#666;" id="roundInfo"></div>
+  <button id="nextPhaseBtn">Next Phase →</button>
+</div>
+
+<div class="card">
+  <h2>View As (tests submarine concealment)</h2>
+  <select id="viewerSelect"></select>
+  <div id="viewerSideInfo" style="font-size:12px; color:#666; margin-top:6px;"></div>
+</div>
+
+<div class="card">
+  <h2>Sea Zones With Submarines (from selected viewer's perspective)</h2>
+  <div id="subVisibility"></div>
+</div>
+
+<div class="card">
+  <h2>Players</h2>
+  <table id="playersTable"><tr><th>Power</th><th>IPC</th><th>Side</th></tr></table>
+</div>
+
+<div class="card">
+  <h2>Event Log</h2>
+  <div id="logList"></div>
+</div>
+
+<script>
+const GAME_DATA = {"meta": {"edition": "Axis & Allies Revised (2004)", "source": "Cross-verified against official rulebook (axisallies.com/rules/axis-allies-rules-revised.pdf) and TripleA world_war_ii_revised/ww2v2.xml", "victoryConditions": {"minor": 8, "major": 10, "total": 12}}, "players": [{"id": "Russians", "name": "Soviet Union", "color": "#8B2E2E", "startingIPC": 24, "side": "Allies"}, {"id": "Germans", "name": "Germany", "color": "#5A5A5A", "startingIPC": 40, "side": "Axis"}, {"id": "British", "name": "United Kingdom", "color": "#C4A567", "startingIPC": 30, "side": "Allies"}, {"id": "Japanese", "name": "Japan", "color": "#D4822A", "startingIPC": 30, "side": "Axis"}, {"id": "Americans", "name": "United States", "color": "#5A7A3A", "startingIPC": 42, "side": "Allies"}], "units": {"infantry": {"id": "infantry", "attack": 1, "defense": 2, "movement": 1, "isSea": false, "isAir": false, "artillerySupportable": true, "isInfantry": true, "cost": 3}, "artillery": {"id": "artillery", "attack": 2, "defense": 2, "movement": 1, "isSea": false, "isAir": false, "artillery": true, "cost": 4}, "fighter": {"id": "fighter", "attack": 3, "defense": 4, "movement": 4, "isSea": false, "isAir": true, "cost": 10}, "bomber": {"id": "bomber", "attack": 4, "defense": 1, "movement": 6, "isSea": false, "isAir": true, "cost": 15}, "transport": {"id": "transport", "attack": 0, "defense": 1, "movement": 2, "isSea": true, "isAir": false, "transportCapacity": 5, "cost": 8}, "battleship": {"id": "battleship", "attack": 4, "defense": 4, "movement": 2, "isSea": true, "isAir": false, "canBombard": true, "hitPoints": 2, "cost": 24}, "destroyer": {"id": "destroyer", "attack": 3, "defense": 3, "movement": 2, "isSea": true, "isAir": false, "isDestroyer": true, "cost": 12}, "carrier": {"id": "carrier", "attack": 1, "defense": 3, "movement": 2, "isSea": true, "isAir": false, "carrierCapacity": 2, "cost": 16}, "submarine": {"id": "submarine", "attack": 2, "defense": 2, "movement": 2, "isSea": true, "isAir": false, "isSub": true, "cost": 8}, "factory": {"id": "factory", "attack": 0, "defense": 0, "movement": 0, "isSea": false, "isAir": false, "isFactory": true, "cost": 15}, "aaGun": {"id": "aaGun", "attack": 0, "defense": 0, "movement": 1, "isSea": false, "isAir": false, "isAA": true, "cost": 5}, "tank": {"id": "tank", "attack": 3, "defense": 3, "movement": 2, "isSea": false, "isAir": false, "canBlitz": true, "cost": 5}}, "territories": {"Eastern Canada": {"name": "Eastern Canada", "isSea": false, "income": 3, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["1 Sea Zone", "9 Sea Zone", "Eastern United States", "Western Canada"]}, "Germany": {"name": "Germany", "isSea": false, "income": 10, "isVictoryCity": true, "capitalOf": "Germans", "originalOwner": "Germans", "connections": ["Switzerland", "5 Sea Zone", "Western Europe", "Southern Europe", "Balkans", "Eastern Europe"]}, "Midway": {"name": "Midway", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Americans", "connections": ["56 Sea Zone"]}, "Greenland": {"name": "Greenland", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Americans", "connections": ["2 Sea Zone"]}, "Union of South Africa": {"name": "Union of South Africa", "isSea": false, "income": 2, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["Angola", "Mozambique", "27 Sea Zone", "28 Sea Zone", "Kenya"]}, "Australia": {"name": "Australia", "isSea": false, "income": 2, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["38 Sea Zone", "39 Sea Zone", "40 Sea Zone", "46 Sea Zone"]}, "Kenya": {"name": "Kenya", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["Angola", "Mozambique", "33 Sea Zone", "Belgian Congo", "Italian East Africa", "Union of South Africa"]}, "Manchuria": {"name": "Manchuria", "isSea": false, "income": 3, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Japanese", "connections": ["Mongolia", "61 Sea Zone", "Buryatia S.S.R.", "China", "Kwantung"]}, "Alaska": {"name": "Alaska", "isSea": false, "income": 2, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Americans", "connections": ["63 Sea Zone", "64 Sea Zone", "Western Canada"]}, "Persia": {"name": "Persia", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["Afghanistan", "Turkey", "34 Sea Zone", "Caucasus", "Kazakh S.S.R.", "India", "Trans-Jordan"]}, "French West Africa": {"name": "French West Africa", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["Sahara", "Rio De Oro", "17 Sea Zone", "French Equatorial Africa"]}, "Turkey": {"name": "Turkey", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["15 Sea Zone", "16 Sea Zone", "Caucasus", "Persia", "Trans-Jordan"]}, "Belgian Congo": {"name": "Belgian Congo", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["Angola", "23 Sea Zone", "Anglo Egypt", "French Equatorial Africa", "Italian East Africa", "Kenya"]}, "India": {"name": "India", "isSea": false, "income": 3, "isVictoryCity": true, "capitalOf": null, "originalOwner": "British", "connections": ["Afghanistan", "Himalaya", "35 Sea Zone", "French Indochina", "Persia"]}, "Soviet Far East": {"name": "Soviet Far East", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Russians", "connections": ["62 Sea Zone", "Yakut S.S.R.", "Buryatia S.S.R."]}, "Southern Europe": {"name": "Southern Europe", "isSea": false, "income": 6, "isVictoryCity": true, "capitalOf": null, "originalOwner": "Germans", "connections": ["Switzerland", "14 Sea Zone", "Western Europe", "Germany", "Balkans"]}, "Mexico": {"name": "Mexico", "isSea": false, "income": 2, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Americans", "connections": ["54 Sea Zone", "Western United States", "Central United States", "Panama"]}, "Spain": {"name": "Spain", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["12 Sea Zone", "13 Sea Zone", "Gibraltar", "Western Europe"]}, "Afghanistan": {"name": "Afghanistan", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Kazakh S.S.R.", "Himalaya", "India", "Persia"]}, "Philipine Islands": {"name": "Philipine Islands", "isSea": false, "income": 3, "isVictoryCity": true, "capitalOf": null, "originalOwner": "Japanese", "connections": ["49 Sea Zone"]}, "Archangel": {"name": "Archangel", "isSea": false, "income": 2, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Russians", "connections": ["4 Sea Zone", "Karelia S.S.R.", "West Russia", "Russia"]}, "Novosibirsk": {"name": "Novosibirsk", "isSea": false, "income": 2, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Russians", "connections": ["Mongolia", "Russia", "Kazakh S.S.R.", "Evenki National Okrug", "Yakut S.S.R.", "Sinkiang"]}, "Eire": {"name": "Eire", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["2 Sea Zone", "United Kingdom"]}, "Mozambique": {"name": "Mozambique", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["33 Sea Zone", "Kenya", "Union of South Africa"]}, "Italian East Africa": {"name": "Italian East Africa", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["34 Sea Zone", "Anglo Egypt", "Belgian Congo", "Kenya"]}, "Eastern Europe": {"name": "Eastern Europe", "isSea": false, "income": 3, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Germans", "connections": ["5 Sea Zone", "Germany", "Balkans", "Ukraine S.S.R.", "Belorussia", "Karelia S.S.R."]}, "Western United States": {"name": "Western United States", "isSea": false, "income": 10, "isVictoryCity": true, "capitalOf": null, "originalOwner": "Americans", "connections": ["54 Sea Zone", "55 Sea Zone", "Central United States", "Mexico", "Western Canada"]}, "Karelia S.S.R.": {"name": "Karelia S.S.R.", "isSea": false, "income": 2, "isVictoryCity": true, "capitalOf": null, "originalOwner": "Russians", "connections": ["4 Sea Zone", "5 Sea Zone", "Eastern Europe", "Norway", "Belorussia", "Archangel", "West Russia"]}, "Kwantung": {"name": "Kwantung", "isSea": false, "income": 3, "isVictoryCity": true, "capitalOf": null, "originalOwner": "Japanese", "connections": ["59 Sea Zone", "Manchuria", "China", "French Indochina"]}, "Brazil": {"name": "Brazil", "isSea": false, "income": 3, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Americans", "connections": ["Venezuela", "Peru", "Argentina", "18 Sea Zone", "22 Sea Zone"]}, "Borneo": {"name": "Borneo", "isSea": false, "income": 4, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Japanese", "connections": ["48 Sea Zone"]}, "French Madagascar": {"name": "French Madagascar", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["28 Sea Zone", "29 Sea Zone", "32 Sea Zone", "33 Sea Zone"]}, "Yakut S.S.R.": {"name": "Yakut S.S.R.", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Russians", "connections": ["Mongolia", "Evenki National Okrug", "Novosibirsk", "Soviet Far East", "Buryatia S.S.R."]}, "Hawaiian Islands": {"name": "Hawaiian Islands", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Americans", "connections": ["52 Sea Zone"]}, "East Indies": {"name": "East Indies", "isSea": false, "income": 4, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Japanese", "connections": ["37 Sea Zone"]}, "Saudi Arabia": {"name": "Saudi Arabia", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["34 Sea Zone", "Trans-Jordan"]}, "Switzerland": {"name": "Switzerland", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Germany", "Western Europe", "Southern Europe"]}, "Norway": {"name": "Norway", "isSea": false, "income": 3, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Germans", "connections": ["Sweden", "3 Sea Zone", "5 Sea Zone", "6 Sea Zone", "Karelia S.S.R."]}, "French Indochina": {"name": "French Indochina", "isSea": false, "income": 3, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Japanese", "connections": ["Himalaya", "36 Sea Zone", "India", "Kwantung", "China"]}, "West Indies": {"name": "West Indies", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Americans", "connections": ["19 Sea Zone"]}, "Kazakh S.S.R.": {"name": "Kazakh S.S.R.", "isSea": false, "income": 2, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Russians", "connections": ["Afghanistan", "Caucasus", "Russia", "Novosibirsk", "Sinkiang", "Persia"]}, "Venezuela": {"name": "Venezuela", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["19 Sea Zone", "20 Sea Zone", "Panama", "Brazil", "Peru"]}, "Trans-Jordan": {"name": "Trans-Jordan", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["Turkey", "Saudi Arabia", "15 Sea Zone", "34 Sea Zone", "Persia", "Anglo Egypt"]}, "United Kingdom": {"name": "United Kingdom", "isSea": false, "income": 8, "isVictoryCity": true, "capitalOf": "British", "originalOwner": "British", "connections": ["Eire", "2 Sea Zone", "3 Sea Zone", "6 Sea Zone", "7 Sea Zone", "8 Sea Zone"]}, "Western Europe": {"name": "Western Europe", "isSea": false, "income": 6, "isVictoryCity": true, "capitalOf": null, "originalOwner": "Germans", "connections": ["Switzerland", "Spain", "5 Sea Zone", "6 Sea Zone", "7 Sea Zone", "13 Sea Zone", "Germany", "Southern Europe"]}, "Rio De Oro": {"name": "Rio De Oro", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["17 Sea Zone", "French West Africa"]}, "Angola": {"name": "Angola", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["27 Sea Zone", "Belgian Congo", "Kenya", "Union of South Africa"]}, "New Zealand": {"name": "New Zealand", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["41 Sea Zone"]}, "Sahara": {"name": "Sahara", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Anglo Egypt", "Libya", "Algeria", "French West Africa", "French Equatorial Africa"]}, "French Equatorial Africa": {"name": "French Equatorial Africa", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["Sahara", "23 Sea Zone", "Anglo Egypt", "French West Africa", "Belgian Congo"]}, "Gibraltar": {"name": "Gibraltar", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["Spain", "13 Sea Zone"]}, "Solomon Islands": {"name": "Solomon Islands", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Japanese", "connections": ["45 Sea Zone"]}, "Caucasus": {"name": "Caucasus", "isSea": false, "income": 4, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Russians", "connections": ["Turkey", "16 Sea Zone", "Ukraine S.S.R.", "Persia", "West Russia", "Russia", "Kazakh S.S.R."]}, "Sinkiang": {"name": "Sinkiang", "isSea": false, "income": 2, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Americans", "connections": ["Himalaya", "Mongolia", "Kazakh S.S.R.", "Novosibirsk", "China"]}, "Algeria": {"name": "Algeria", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Germans", "connections": ["Sahara", "12 Sea Zone", "13 Sea Zone", "Libya"]}, "Balkans": {"name": "Balkans", "isSea": false, "income": 3, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Germans", "connections": ["16 Sea Zone", "Germany", "Southern Europe", "Eastern Europe", "Ukraine S.S.R."]}, "Wake Island": {"name": "Wake Island", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Japanese", "connections": ["51 Sea Zone"]}, "Himalaya": {"name": "Himalaya", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Afghanistan", "India", "Sinkiang", "China", "French Indochina"]}, "Evenki National Okrug": {"name": "Evenki National Okrug", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Russians", "connections": ["Russia", "Yakut S.S.R.", "Novosibirsk"]}, "Sweden": {"name": "Sweden", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Norway", "5 Sea Zone"]}, "Libya": {"name": "Libya", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Germans", "connections": ["Sahara", "14 Sea Zone", "Anglo Egypt", "Algeria"]}, "Ukraine S.S.R.": {"name": "Ukraine S.S.R.", "isSea": false, "income": 3, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Germans", "connections": ["16 Sea Zone", "Balkans", "Eastern Europe", "Belorussia", "West Russia", "Caucasus"]}, "Mongolia": {"name": "Mongolia", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Novosibirsk", "Sinkiang", "Manchuria", "China", "Yakut S.S.R.", "Buryatia S.S.R."]}, "West Russia": {"name": "West Russia", "isSea": false, "income": 2, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Germans", "connections": ["Karelia S.S.R.", "Belorussia", "Ukraine S.S.R.", "Caucasus", "Russia", "Archangel"]}, "Peru": {"name": "Peru", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["21 Sea Zone", "Venezuela", "Brazil", "Argentina"]}, "Eastern United States": {"name": "Eastern United States", "isSea": false, "income": 12, "isVictoryCity": true, "capitalOf": "Americans", "originalOwner": "Americans", "connections": ["10 Sea Zone", "Eastern Canada", "Central United States", "Panama"]}, "Belorussia": {"name": "Belorussia", "isSea": false, "income": 2, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Germans", "connections": ["Eastern Europe", "Karelia S.S.R.", "West Russia", "Ukraine S.S.R."]}, "Buryatia S.S.R.": {"name": "Buryatia S.S.R.", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Russians", "connections": ["Mongolia", "60 Sea Zone", "62 Sea Zone", "Yakut S.S.R.", "Manchuria", "Soviet Far East"]}, "Russia": {"name": "Russia", "isSea": false, "income": 8, "isVictoryCity": true, "capitalOf": "Russians", "originalOwner": "Russians", "connections": ["Caucasus", "West Russia", "Archangel", "Evenki National Okrug", "Novosibirsk", "Kazakh S.S.R."]}, "Anglo Egypt": {"name": "Anglo Egypt", "isSea": false, "income": 2, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["Sahara", "15 Sea Zone", "34 Sea Zone", "Trans-Jordan", "Libya", "Italian East Africa", "French Equatorial Africa", "Belgian Congo"]}, "New Guinea": {"name": "New Guinea", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Japanese", "connections": ["47 Sea Zone"]}, "Okinawa": {"name": "Okinawa", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Japanese", "connections": ["58 Sea Zone"]}, "Panama": {"name": "Panama", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Americans", "connections": ["Venezuela", "10 Sea Zone", "19 Sea Zone", "20 Sea Zone", "Eastern United States", "Mexico"]}, "Western Canada": {"name": "Western Canada", "isSea": false, "income": 1, "isVictoryCity": false, "capitalOf": null, "originalOwner": "British", "connections": ["55 Sea Zone", "63 Sea Zone", "64 Sea Zone", "Eastern Canada", "Central United States", "Western United States", "Alaska"]}, "Central United States": {"name": "Central United States", "isSea": false, "income": 6, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Americans", "connections": ["Eastern United States", "Western Canada", "Western United States", "Mexico"]}, "Argentina": {"name": "Argentina", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["21 Sea Zone", "25 Sea Zone", "Brazil", "Peru"]}, "China": {"name": "China", "isSea": false, "income": 2, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Americans", "connections": ["Himalaya", "Mongolia", "Sinkiang", "Manchuria", "Kwantung", "French Indochina"]}, "Japan": {"name": "Japan", "isSea": false, "income": 8, "isVictoryCity": true, "capitalOf": "Japanese", "originalOwner": "Japanese", "connections": ["60 Sea Zone", "61 Sea Zone"]}, "Caroline Islands": {"name": "Caroline Islands", "isSea": false, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": "Japanese", "connections": ["50 Sea Zone"]}, "28 Sea Zone": {"name": "28 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["27 Sea Zone", "29 Sea Zone", "33 Sea Zone", "Union of South Africa", "French Madagascar"]}, "56 Sea Zone": {"name": "56 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["52 Sea Zone", "55 Sea Zone", "57 Sea Zone", "63 Sea Zone", "64 Sea Zone", "Midway"]}, "7 Sea Zone": {"name": "7 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["6 Sea Zone", "8 Sea Zone", "12 Sea Zone", "United Kingdom", "Western Europe"]}, "31 Sea Zone": {"name": "31 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["30 Sea Zone", "32 Sea Zone", "35 Sea Zone", "37 Sea Zone", "38 Sea Zone"]}, "27 Sea Zone": {"name": "27 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Angola", "23 Sea Zone", "24 Sea Zone", "26 Sea Zone", "28 Sea Zone", "Union of South Africa"]}, "5 Sea Zone": {"name": "5 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Sweden", "6 Sea Zone", "Norway", "Karelia S.S.R.", "Eastern Europe", "Germany", "Western Europe"]}, "23 Sea Zone": {"name": "23 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["17 Sea Zone", "22 Sea Zone", "24 Sea Zone", "27 Sea Zone", "French Equatorial Africa", "Belgian Congo"]}, "53 Sea Zone": {"name": "53 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["43 Sea Zone", "44 Sea Zone", "52 Sea Zone", "54 Sea Zone", "55 Sea Zone"]}, "42 Sea Zone": {"name": "42 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["25 Sea Zone", "41 Sea Zone", "43 Sea Zone", "44 Sea Zone"]}, "59 Sea Zone": {"name": "59 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["36 Sea Zone", "49 Sea Zone", "60 Sea Zone", "61 Sea Zone", "Kwantung"]}, "30 Sea Zone": {"name": "30 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["29 Sea Zone", "31 Sea Zone", "32 Sea Zone", "38 Sea Zone", "39 Sea Zone"]}, "50 Sea Zone": {"name": "50 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["45 Sea Zone", "47 Sea Zone", "48 Sea Zone", "49 Sea Zone", "58 Sea Zone", "51 Sea Zone", "Caroline Islands"]}, "54 Sea Zone": {"name": "54 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["20 Sea Zone", "43 Sea Zone", "53 Sea Zone", "55 Sea Zone", "Mexico", "Western United States"]}, "43 Sea Zone": {"name": "43 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["21 Sea Zone", "42 Sea Zone", "44 Sea Zone", "53 Sea Zone", "54 Sea Zone"]}, "41 Sea Zone": {"name": "41 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["40 Sea Zone", "46 Sea Zone", "45 Sea Zone", "42 Sea Zone", "44 Sea Zone", "New Zealand"]}, "4 Sea Zone": {"name": "4 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["3 Sea Zone", "Karelia S.S.R.", "Archangel"]}, "44 Sea Zone": {"name": "44 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["41 Sea Zone", "42 Sea Zone", "43 Sea Zone", "45 Sea Zone", "52 Sea Zone", "53 Sea Zone"]}, "11 Sea Zone": {"name": "11 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["9 Sea Zone", "10 Sea Zone", "12 Sea Zone", "18 Sea Zone", "19 Sea Zone"]}, "51 Sea Zone": {"name": "51 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["45 Sea Zone", "50 Sea Zone", "52 Sea Zone", "58 Sea Zone", "57 Sea Zone", "60 Sea Zone", "Wake Island"]}, "25 Sea Zone": {"name": "25 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Argentina", "21 Sea Zone", "22 Sea Zone", "24 Sea Zone", "26 Sea Zone", "42 Sea Zone"]}, "29 Sea Zone": {"name": "29 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["28 Sea Zone", "32 Sea Zone", "30 Sea Zone", "French Madagascar"]}, "34 Sea Zone": {"name": "34 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Saudi Arabia", "15 Sea Zone", "32 Sea Zone", "33 Sea Zone", "35 Sea Zone", "Italian East Africa", "Anglo Egypt", "Trans-Jordan", "Persia"]}, "12 Sea Zone": {"name": "12 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Spain", "7 Sea Zone", "8 Sea Zone", "9 Sea Zone", "11 Sea Zone", "13 Sea Zone", "17 Sea Zone", "18 Sea Zone", "Algeria"]}, "32 Sea Zone": {"name": "32 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["29 Sea Zone", "30 Sea Zone", "31 Sea Zone", "33 Sea Zone", "34 Sea Zone", "35 Sea Zone", "French Madagascar"]}, "46 Sea Zone": {"name": "46 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["38 Sea Zone", "40 Sea Zone", "41 Sea Zone", "45 Sea Zone", "47 Sea Zone", "Australia"]}, "63 Sea Zone": {"name": "63 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["56 Sea Zone", "57 Sea Zone", "62 Sea Zone", "64 Sea Zone", "Alaska", "Western Canada"]}, "8 Sea Zone": {"name": "8 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["1 Sea Zone", "2 Sea Zone", "7 Sea Zone", "9 Sea Zone", "12 Sea Zone", "United Kingdom"]}, "26 Sea Zone": {"name": "26 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["24 Sea Zone", "25 Sea Zone", "27 Sea Zone"]}, "38 Sea Zone": {"name": "38 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["30 Sea Zone", "31 Sea Zone", "46 Sea Zone", "37 Sea Zone", "39 Sea Zone", "47 Sea Zone", "Australia"]}, "3 Sea Zone": {"name": "3 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["2 Sea Zone", "4 Sea Zone", "6 Sea Zone", "United Kingdom", "Norway"]}, "37 Sea Zone": {"name": "37 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["31 Sea Zone", "35 Sea Zone", "36 Sea Zone", "48 Sea Zone", "47 Sea Zone", "38 Sea Zone", "East Indies"]}, "6 Sea Zone": {"name": "6 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["3 Sea Zone", "5 Sea Zone", "7 Sea Zone", "United Kingdom", "Norway", "Western Europe"]}, "9 Sea Zone": {"name": "9 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["1 Sea Zone", "8 Sea Zone", "10 Sea Zone", "11 Sea Zone", "12 Sea Zone", "Eastern Canada"]}, "61 Sea Zone": {"name": "61 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["59 Sea Zone", "60 Sea Zone", "Japan", "Manchuria"]}, "39 Sea Zone": {"name": "39 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["30 Sea Zone", "38 Sea Zone", "40 Sea Zone", "Australia"]}, "36 Sea Zone": {"name": "36 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["35 Sea Zone", "37 Sea Zone", "48 Sea Zone", "49 Sea Zone", "59 Sea Zone", "French Indochina"]}, "49 Sea Zone": {"name": "49 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["36 Sea Zone", "48 Sea Zone", "50 Sea Zone", "58 Sea Zone", "59 Sea Zone", "60 Sea Zone", "Philipine Islands"]}, "64 Sea Zone": {"name": "64 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["55 Sea Zone", "56 Sea Zone", "63 Sea Zone", "Alaska", "Western Canada"]}, "45 Sea Zone": {"name": "45 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["41 Sea Zone", "44 Sea Zone", "46 Sea Zone", "47 Sea Zone", "50 Sea Zone", "51 Sea Zone", "52 Sea Zone", "Solomon Islands"]}, "57 Sea Zone": {"name": "57 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["51 Sea Zone", "52 Sea Zone", "56 Sea Zone", "60 Sea Zone", "62 Sea Zone", "63 Sea Zone"]}, "52 Sea Zone": {"name": "52 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["56 Sea Zone", "44 Sea Zone", "45 Sea Zone", "51 Sea Zone", "53 Sea Zone", "55 Sea Zone", "57 Sea Zone", "Hawaiian Islands"]}, "1 Sea Zone": {"name": "1 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Eastern Canada", "2 Sea Zone", "8 Sea Zone", "9 Sea Zone"]}, "48 Sea Zone": {"name": "48 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["36 Sea Zone", "37 Sea Zone", "47 Sea Zone", "49 Sea Zone", "50 Sea Zone", "Borneo"]}, "17 Sea Zone": {"name": "17 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Rio De Oro", "12 Sea Zone", "18 Sea Zone", "22 Sea Zone", "23 Sea Zone", "French West Africa"]}, "10 Sea Zone": {"name": "10 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["9 Sea Zone", "11 Sea Zone", "19 Sea Zone", "Eastern United States", "Panama"]}, "15 Sea Zone": {"name": "15 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Turkey", "14 Sea Zone", "16 Sea Zone", "34 Sea Zone", "Trans-Jordan", "Anglo Egypt"]}, "2 Sea Zone": {"name": "2 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Eire", "1 Sea Zone", "Greenland", "United Kingdom", "3 Sea Zone", "8 Sea Zone"]}, "33 Sea Zone": {"name": "33 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Mozambique", "28 Sea Zone", "32 Sea Zone", "34 Sea Zone", "French Madagascar", "Kenya"]}, "14 Sea Zone": {"name": "14 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["13 Sea Zone", "15 Sea Zone", "16 Sea Zone", "Southern Europe", "Libya"]}, "13 Sea Zone": {"name": "13 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Spain", "12 Sea Zone", "14 Sea Zone", "Gibraltar", "Western Europe", "Algeria"]}, "55 Sea Zone": {"name": "55 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["52 Sea Zone", "53 Sea Zone", "54 Sea Zone", "56 Sea Zone", "64 Sea Zone", "Western United States", "Western Canada"]}, "35 Sea Zone": {"name": "35 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["31 Sea Zone", "32 Sea Zone", "34 Sea Zone", "36 Sea Zone", "37 Sea Zone", "India"]}, "16 Sea Zone": {"name": "16 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Turkey", "14 Sea Zone", "15 Sea Zone", "Balkans", "Ukraine S.S.R.", "Caucasus"]}, "19 Sea Zone": {"name": "19 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Venezuela", "10 Sea Zone", "11 Sea Zone", "18 Sea Zone", "20 Sea Zone", "Panama", "West Indies"]}, "60 Sea Zone": {"name": "60 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["49 Sea Zone", "51 Sea Zone", "57 Sea Zone", "58 Sea Zone", "59 Sea Zone", "61 Sea Zone", "62 Sea Zone", "Japan", "Buryatia S.S.R."]}, "62 Sea Zone": {"name": "62 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["57 Sea Zone", "60 Sea Zone", "63 Sea Zone", "Buryatia S.S.R.", "Soviet Far East"]}, "21 Sea Zone": {"name": "21 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Peru", "Argentina", "20 Sea Zone", "25 Sea Zone", "43 Sea Zone"]}, "22 Sea Zone": {"name": "22 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["17 Sea Zone", "18 Sea Zone", "23 Sea Zone", "24 Sea Zone", "25 Sea Zone", "Brazil"]}, "18 Sea Zone": {"name": "18 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["11 Sea Zone", "12 Sea Zone", "17 Sea Zone", "19 Sea Zone", "22 Sea Zone", "Brazil"]}, "47 Sea Zone": {"name": "47 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["37 Sea Zone", "38 Sea Zone", "45 Sea Zone", "46 Sea Zone", "48 Sea Zone", "50 Sea Zone", "New Guinea"]}, "58 Sea Zone": {"name": "58 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["49 Sea Zone", "50 Sea Zone", "51 Sea Zone", "60 Sea Zone", "Okinawa"]}, "40 Sea Zone": {"name": "40 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["39 Sea Zone", "41 Sea Zone", "46 Sea Zone", "Australia"]}, "24 Sea Zone": {"name": "24 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["22 Sea Zone", "23 Sea Zone", "25 Sea Zone", "26 Sea Zone", "27 Sea Zone"]}, "20 Sea Zone": {"name": "20 Sea Zone", "isSea": true, "income": 0, "isVictoryCity": false, "capitalOf": null, "originalOwner": null, "connections": ["Venezuela", "19 Sea Zone", "21 Sea Zone", "54 Sea Zone", "Panama"]}}, "startingSetup": {"Karelia S.S.R.": [{"unitType": "infantry", "quantity": 3, "owner": "Russians"}, {"unitType": "fighter", "quantity": 1, "owner": "Russians"}], "Archangel": [{"unitType": "tank", "quantity": 1, "owner": "Russians"}, {"unitType": "infantry", "quantity": 3, "owner": "Russians"}], "Caucasus": [{"unitType": "factory", "quantity": 1, "owner": "Russians"}, {"unitType": "aaGun", "quantity": 1, "owner": "Russians"}, {"unitType": "artillery", "quantity": 1, "owner": "Russians"}, {"unitType": "infantry", "quantity": 3, "owner": "Russians"}, {"unitType": "tank", "quantity": 1, "owner": "Russians"}], "Russia": [{"unitType": "factory", "quantity": 1, "owner": "Russians"}, {"unitType": "aaGun", "quantity": 1, "owner": "Russians"}, {"unitType": "infantry", "quantity": 3, "owner": "Russians"}, {"unitType": "artillery", "quantity": 1, "owner": "Russians"}, {"unitType": "tank", "quantity": 2, "owner": "Russians"}, {"unitType": "fighter", "quantity": 1, "owner": "Russians"}], "Evenki National Okrug": [{"unitType": "infantry", "quantity": 2, "owner": "Russians"}], "Novosibirsk": [{"unitType": "infantry", "quantity": 2, "owner": "Russians"}], "Yakut S.S.R.": [{"unitType": "infantry", "quantity": 2, "owner": "Russians"}], "Soviet Far East": [{"unitType": "infantry", "quantity": 2, "owner": "Russians"}], "Buryatia S.S.R.": [{"unitType": "infantry", "quantity": 2, "owner": "Russians"}], "Kazakh S.S.R.": [{"unitType": "infantry", "quantity": 2, "owner": "Russians"}], "4 Sea Zone": [{"unitType": "submarine", "quantity": 1, "owner": "Russians"}], "Western Europe": [{"unitType": "aaGun", "quantity": 1, "owner": "Germans"}, {"unitType": "infantry", "quantity": 2, "owner": "Germans"}, {"unitType": "tank", "quantity": 2, "owner": "Germans"}, {"unitType": "fighter", "quantity": 1, "owner": "Germans"}], "Southern Europe": [{"unitType": "aaGun", "quantity": 1, "owner": "Germans"}, {"unitType": "tank", "quantity": 1, "owner": "Germans"}, {"unitType": "artillery", "quantity": 1, "owner": "Germans"}, {"unitType": "factory", "quantity": 1, "owner": "Germans"}, {"unitType": "infantry", "quantity": 2, "owner": "Germans"}], "Germany": [{"unitType": "factory", "quantity": 1, "owner": "Germans"}, {"unitType": "aaGun", "quantity": 1, "owner": "Germans"}, {"unitType": "infantry", "quantity": 3, "owner": "Germans"}, {"unitType": "tank", "quantity": 2, "owner": "Germans"}, {"unitType": "bomber", "quantity": 1, "owner": "Germans"}, {"unitType": "fighter", "quantity": 1, "owner": "Germans"}], "Norway": [{"unitType": "infantry", "quantity": 3, "owner": "Germans"}, {"unitType": "fighter", "quantity": 1, "owner": "Germans"}], "Balkans": [{"unitType": "infantry", "quantity": 2, "owner": "Germans"}, {"unitType": "fighter", "quantity": 1, "owner": "Germans"}, {"unitType": "tank", "quantity": 1, "owner": "Germans"}], "Eastern Europe": [{"unitType": "tank", "quantity": 1, "owner": "Germans"}, {"unitType": "fighter", "quantity": 1, "owner": "Germans"}, {"unitType": "infantry", "quantity": 2, "owner": "Germans"}], "Ukraine S.S.R.": [{"unitType": "artillery", "quantity": 1, "owner": "Germans"}, {"unitType": "infantry", "quantity": 3, "owner": "Germans"}, {"unitType": "tank", "quantity": 1, "owner": "Germans"}, {"unitType": "fighter", "quantity": 1, "owner": "Germans"}], "Belorussia": [{"unitType": "infantry", "quantity": 3, "owner": "Germans"}], "West Russia": [{"unitType": "infantry", "quantity": 3, "owner": "Germans"}, {"unitType": "artillery", "quantity": 1, "owner": "Germans"}, {"unitType": "tank", "quantity": 1, "owner": "Germans"}], "Libya": [{"unitType": "infantry", "quantity": 1, "owner": "Germans"}, {"unitType": "tank", "quantity": 1, "owner": "Germans"}], "Algeria": [{"unitType": "infantry", "quantity": 1, "owner": "Germans"}, {"unitType": "artillery", "quantity": 1, "owner": "Germans"}], "5 Sea Zone": [{"unitType": "transport", "quantity": 1, "owner": "Germans"}, {"unitType": "submarine", "quantity": 2, "owner": "Germans"}, {"unitType": "destroyer", "quantity": 1, "owner": "Germans"}], "8 Sea Zone": [{"unitType": "submarine", "quantity": 1, "owner": "Germans"}], "14 Sea Zone": [{"unitType": "transport", "quantity": 1, "owner": "Germans"}, {"unitType": "battleship", "quantity": 1, "owner": "Germans"}], "Eastern Canada": [{"unitType": "tank", "quantity": 1, "owner": "British"}], "United Kingdom": [{"unitType": "infantry", "quantity": 2, "owner": "British"}, {"unitType": "artillery", "quantity": 1, "owner": "British"}, {"unitType": "tank", "quantity": 1, "owner": "British"}, {"unitType": "factory", "quantity": 1, "owner": "British"}, {"unitType": "aaGun", "quantity": 1, "owner": "British"}, {"unitType": "fighter", "quantity": 2, "owner": "British"}, {"unitType": "bomber", "quantity": 1, "owner": "British"}], "Persia": [{"unitType": "infantry", "quantity": 1, "owner": "British"}], "India": [{"unitType": "aaGun", "quantity": 1, "owner": "British"}, {"unitType": "infantry", "quantity": 3, "owner": "British"}], "Trans-Jordan": [{"unitType": "infantry", "quantity": 1, "owner": "British"}], "Anglo Egypt": [{"unitType": "infantry", "quantity": 1, "owner": "British"}, {"unitType": "tank", "quantity": 1, "owner": "British"}, {"unitType": "fighter", "quantity": 1, "owner": "British"}], "Union of South Africa": [{"unitType": "infantry", "quantity": 1, "owner": "British"}], "Australia": [{"unitType": "infantry", "quantity": 3, "owner": "British"}], "New Zealand": [{"unitType": "infantry", "quantity": 1, "owner": "British"}], "Western Canada": [{"unitType": "infantry", "quantity": 1, "owner": "British"}], "1 Sea Zone": [{"unitType": "transport", "quantity": 1, "owner": "British"}], "2 Sea Zone": [{"unitType": "battleship", "quantity": 1, "owner": "British"}, {"unitType": "transport", "quantity": 1, "owner": "British"}], "13 Sea Zone": [{"unitType": "battleship", "quantity": 1, "owner": "British"}], "15 Sea Zone": [{"unitType": "destroyer", "quantity": 1, "owner": "British"}], "35 Sea Zone": [{"unitType": "carrier", "quantity": 1, "owner": "British"}, {"unitType": "transport", "quantity": 1, "owner": "British"}, {"unitType": "fighter", "quantity": 1, "owner": "British"}, {"unitType": "destroyer", "quantity": 1, "owner": "British"}], "40 Sea Zone": [{"unitType": "transport", "quantity": 1, "owner": "British"}, {"unitType": "submarine", "quantity": 1, "owner": "British"}], "Manchuria": [{"unitType": "fighter", "quantity": 1, "owner": "Japanese"}, {"unitType": "infantry", "quantity": 2, "owner": "Japanese"}], "Kwantung": [{"unitType": "infantry", "quantity": 3, "owner": "Japanese"}], "French Indochina": [{"unitType": "fighter", "quantity": 1, "owner": "Japanese"}, {"unitType": "infantry", "quantity": 2, "owner": "Japanese"}], "Solomon Islands": [{"unitType": "infantry", "quantity": 1, "owner": "Japanese"}], "New Guinea": [{"unitType": "infantry", "quantity": 1, "owner": "Japanese"}], "Borneo": [{"unitType": "infantry", "quantity": 1, "owner": "Japanese"}], "East Indies": [{"unitType": "infantry", "quantity": 2, "owner": "Japanese"}], "Philipine Islands": [{"unitType": "infantry", "quantity": 2, "owner": "Japanese"}], "Caroline Islands": [{"unitType": "infantry", "quantity": 1, "owner": "Japanese"}], "Okinawa": [{"unitType": "infantry", "quantity": 1, "owner": "Japanese"}], "Wake Island": [{"unitType": "infantry", "quantity": 1, "owner": "Japanese"}], "Japan": [{"unitType": "aaGun", "quantity": 1, "owner": "Japanese"}, {"unitType": "factory", "quantity": 1, "owner": "Japanese"}, {"unitType": "infantry", "quantity": 4, "owner": "Japanese"}, {"unitType": "artillery", "quantity": 1, "owner": "Japanese"}, {"unitType": "tank", "quantity": 1, "owner": "Japanese"}, {"unitType": "fighter", "quantity": 1, "owner": "Japanese"}, {"unitType": "bomber", "quantity": 1, "owner": "Japanese"}], "37 Sea Zone": [{"unitType": "battleship", "quantity": 1, "owner": "Japanese"}, {"unitType": "fighter", "quantity": 2, "owner": "Japanese"}, {"unitType": "carrier", "quantity": 1, "owner": "Japanese"}], "59 Sea Zone": [{"unitType": "transport", "quantity": 1, "owner": "Japanese"}], "60 Sea Zone": [{"unitType": "transport", "quantity": 1, "owner": "Japanese"}, {"unitType": "battleship", "quantity": 1, "owner": "Japanese"}], "50 Sea Zone": [{"unitType": "fighter", "quantity": 1, "owner": "Japanese"}, {"unitType": "destroyer", "quantity": 1, "owner": "Japanese"}, {"unitType": "carrier", "quantity": 1, "owner": "Japanese"}], "45 Sea Zone": [{"unitType": "submarine", "quantity": 1, "owner": "Japanese"}], "Eastern United States": [{"unitType": "factory", "quantity": 1, "owner": "Americans"}, {"unitType": "tank", "quantity": 1, "owner": "Americans"}, {"unitType": "aaGun", "quantity": 1, "owner": "Americans"}, {"unitType": "infantry", "quantity": 2, "owner": "Americans"}, {"unitType": "artillery", "quantity": 1, "owner": "Americans"}, {"unitType": "fighter", "quantity": 1, "owner": "Americans"}, {"unitType": "bomber", "quantity": 1, "owner": "Americans"}], "China": [{"unitType": "infantry", "quantity": 2, "owner": "Americans"}, {"unitType": "fighter", "quantity": 1, "owner": "Americans"}], "Sinkiang": [{"unitType": "infantry", "quantity": 2, "owner": "Americans"}], "Midway": [{"unitType": "infantry", "quantity": 1, "owner": "Americans"}], "Hawaiian Islands": [{"unitType": "infantry", "quantity": 2, "owner": "Americans"}, {"unitType": "fighter", "quantity": 1, "owner": "Americans"}], "Alaska": [{"unitType": "infantry", "quantity": 1, "owner": "Americans"}], "Western United States": [{"unitType": "aaGun", "quantity": 1, "owner": "Americans"}, {"unitType": "factory", "quantity": 1, "owner": "Americans"}, {"unitType": "infantry", "quantity": 2, "owner": "Americans"}, {"unitType": "fighter", "quantity": 1, "owner": "Americans"}], "Central United States": [{"unitType": "infantry", "quantity": 2, "owner": "Americans"}], "10 Sea Zone": [{"unitType": "transport", "quantity": 2, "owner": "Americans"}, {"unitType": "destroyer", "quantity": 1, "owner": "Americans"}], "20 Sea Zone": [{"unitType": "destroyer", "quantity": 1, "owner": "Americans"}], "55 Sea Zone": [{"unitType": "battleship", "quantity": 1, "owner": "Americans"}, {"unitType": "transport", "quantity": 1, "owner": "Americans"}], "52 Sea Zone": [{"unitType": "fighter", "quantity": 1, "owner": "Americans"}, {"unitType": "carrier", "quantity": 1, "owner": "Americans"}, {"unitType": "submarine", "quantity": 1, "owner": "Americans"}]}};
+const HOUSE_RULES = {"meta": {"description": "Phase 2 house rules layer. Extends the verified Phase 1 base data (game-data.json). None of this is required by the official rulebook except Kamikaze Attacks, which IS an official optional rule (Appendix 3, Japan National Advantage #2).", "appliesOnTopOf": "game-data.json"}, "toggles": {"techs": {"jetFighters": {"researchable": true, "description": "Fighters defend on 5 instead of 4."}, "rockets": {"researchable": true, "description": "AA guns can rocket-strike enemy production."}, "superSubmarines": {"researchable": true, "description": "Submarines attack on 3 instead of 2."}, "longRangeAircraft": {"researchable": true, "description": "Fighters move 6 (was 4), bombers move 8 (was 6)."}, "combinedBombardment": {"researchable": true, "description": "Destroyers can shore-bombard like battleships."}, "heavyBombers": {"researchable": true, "description": "Bombers roll 2 dice on attack, still 1 on defense."}}, "startingTechs": {"Russians": [], "Germans": [], "British": [], "Japanese": [], "Americans": []}, "kamikazeAttacks": {"enabled": false, "appliesTo": "Japanese", "isOfficialRule": false, "relatedOfficialRule": "The rulebook (Appendix 3, Japan National Advantage #2) has a same-named but MECHANICALLY DIFFERENT rule: opening-fire only, guaranteed death regardless of outcome, no participation in normal combat. This house rule shares the theme/name but is a distinct custom mechanic \u2014 do not conflate the two.", "appliesToAttack": true, "appliesToDefense": true, "mechanic": {"participation": "The declared unit fights completely normally in the standard attacking/defending units fire step. No special opening-fire step, no guaranteed death.", "dyingRollTrigger": "Only if the unit (a) is selected as a casualty this combat round AND (b) its own roll that round did NOT score a hit.", "dyingRollEffect": "One bonus roll using the unit's normal attack (if attacking) or defense (if defending) value, resolved before the unit is removed from play.", "dyingRollTarget": "Enemy sea units only, including submarines \u2014 subject to the SAME visibility/detection rules as any other attack (see submarineConcealment). A kamikaze dying roll cannot target a submarine that isn't currently detected/visible to the attacking or defending side. This does NOT bypass normal sub-detection.", "onDyingRollHit": "Counts as one additional hit for the kamikaze unit's side, assigned to an eligible enemy sea unit under normal hit-assignment rules.", "note": "If the unit's own roll already hit, or it wasn't selected as a casualty, there is no dying roll \u2014 it just resolves normally."}, "declarationTiming": {"onAttack": "During the Combat Move phase, when the attacking air units are moved into the target space.", "onDefense": "After the attacker's Combat Move phase is announced/completed for that battle, before the Conduct Combat phase begins."}, "description": "A declared kamikaze fighter/bomber fights normally. If it's killed in a round where its own roll missed, it gets one last 'dying' roll at its normal attack/defense value against an enemy sea unit (subs included, even without an enemy destroyer present) before being removed. A hit on that dying roll counts as an extra hit for its side."}, "usIsolationism": {"enabled": false, "roundsLimit": 2, "description": "Americans cannot declare an attack against an Axis-owned or Axis-controlled unit/territory (including US-owned China) until either 2 full rounds have completed, or the Americans have been attacked by an Axis power directly, whichever comes first. Once attacked, this restriction is permanently lifted for the rest of the game."}, "specialUnits": {"panzer": {"enabled": false, "owner": "Germans"}, "longRangeBomber": {"enabled": false, "owner": "British"}, "heavyBomberUnit": {"enabled": false, "owner": "Americans"}, "cannonFodder": {"enabled": false, "owner": "Russians"}}, "submarineConcealment": {"enabled": true, "isOfficialRule": false, "note": "Not a physical-board-game rule \u2014 the real board has no hidden information. This is a digital-adaptation mechanic to restore the 'stealth' theme submarines are supposed to have.", "visibilityRule": {"sameSide": "Always visible to its own side and allies (no detection needed).", "enemySide": "Hidden from the enemy side UNLESS an enemy destroyer is within detectionRadius sea-zone hops of the submarine's current location."}, "detectionRadius": 2, "detectionRadiusUnit": "sea-zone hops via the existing adjacency/connection graph, not pixel/geographic distance", "recalculation": "live \u2014 recomputed from current unit positions whenever visibility is checked; not a persistent/sticky reveal. Moving the detecting destroyer out of range re-hides the submarine.", "effects": {"mapVisibility": "An undetected enemy submarine is not shown on the map/UI to the enemy side.", "targeting": "An undetected enemy submarine cannot be explicitly selected/targeted for attack, since the enemy has no way to know it's there.", "interactionWithExistingRules": "Consistent with the base rule that a sea zone containing only enemy submarines does not stop enemy movement and is not considered hostile \u2014 an undetected sub simply behaves as if the zone were empty from the enemy's perspective. If an enemy destroyer ends up in the SAME sea zone as the submarine (a stricter condition than the 2-hop detection radius), the existing base-game submarine rules already force a stop/engage, independent of this detection mechanic."}}}, "specialUnitDefinitions": {"panzer": {"id": "panzer", "baseUnit": "tank", "displayName": "Panzer", "owner": "Germans", "cost": 7, "attack": 3, "defense": 3, "movement": 2, "bonusMovement": {"amount": 1, "usableOnlyDuring": "noncombatMove", "description": "Total movement is 3, but the 3rd space can only be used during the Noncombat Move phase, never during Combat Move or blitzing."}, "canBlitz": true, "needsDistinctIcon": false, "iconNote": "Custom art created: standard tank icon, blue-steel tint, 'P' badge.", "iconAsset": "Germans/panzer.png"}, "longRangeBomber": {"id": "longRangeBomber", "baseUnit": "bomber", "displayName": "Long-Range Bomber", "owner": "British", "cost": 15, "attack": 4, "defense": 1, "movement": 7, "isStrategicBomber": true, "needsDistinctIcon": false, "iconNote": "Not explicitly requested, but recommend a subtle visual distinction later so players can tell it apart from a standard bomber at a glance.", "iconAsset": "British/bomber_lr.png"}, "heavyBomberUnit": {"id": "heavyBomberUnit", "baseUnit": "bomber", "displayName": "Heavy Bomber", "owner": "Americans", "cost": 20, "attack": 4, "attackDice": 2, "defense": 1, "defenseDice": 1, "movement": 6, "isStrategicBomber": true, "needsDistinctIcon": false, "iconNote": "Existing TripleA asset pack already includes this variant \u2014 no custom art needed.", "overlapNote": "No mechanical conflict with the official Heavy Bombers tech: attackDice is a value, not additive, so a bomber never exceeds 2 dice regardless of which path granted it. If the US researches the tech, all their bombers (including plain ones) get 2 dice for free, which makes buying the pricier Heavy Bomber unit pointless from then on \u2014 no rule enforcement needed, it's just a bad purchase at that point.", "iconAsset": "Americans/bomber_hb.png"}, "cannonFodder": {"id": "cannonFodder", "baseUnit": "infantry", "displayName": "Cannon Fodder", "owner": "Russians", "cost": 1, "attack": 0, "defense": 0, "movement": 1, "canCapture": false, "restrictedProduction": {"onlyAtTerritory": "Russia", "description": "Can only be mobilized from the industrial complex in the Russia territory (Moscow), not any other Soviet factory."}, "stackingRequirement": {"requiresUnitType": "infantry", "minRatio": 1, "description": "Cannot exist in a stack/territory without at least one regular infantry present in the same stack."}, "needsDistinctIcon": false, "iconNote": "Custom art created: standard infantry icon, desaturated/lighter red tint, 'CF' badge.", "designNote": "No special combat-priority rule needed: with 0 attack/0 defense it never scores a hit but can still be chosen as a casualty under the normal rules (defender picks which unit dies), which naturally produces the intended 'infantry + cannon fodder = 2 soakable hits for 4 IPC' effect.", "iconAsset": "Russians/cannonFodder.png"}, "kamikazeFighter": {"id": "kamikazeFighter", "baseUnit": "fighter", "displayName": "Kamikaze Fighter (declared)", "owner": "Japanese", "iconAsset": "Japanese/fighter_kamikaze.png", "iconNote": "Badge applied at declaration time, not a separate purchasable unit \u2014 any Japanese fighter can be marked kamikaze pre-battle."}, "kamikazeBomber": {"id": "kamikazeBomber", "baseUnit": "bomber", "displayName": "Kamikaze Bomber (declared)", "owner": "Japanese", "iconAsset": "Japanese/bomber_kamikaze.png", "iconNote": "Badge applied at declaration time, not a separate purchasable unit \u2014 any Japanese bomber can be marked kamikaze pre-battle."}}};
+</script>
+<script>
+// engine-core.js
+// Core state model + turn sequencer for the Axis & Allies Revised digital engine.
+// Depends on GAME_DATA (game-data.js) and HOUSE_RULES (house-rules.js) being loaded first.
+
+const PHASE_NAMES = [
+  'developWeapons',
+  'purchaseUnits',
+  'combatMove',
+  'conductCombat',
+  'noncombatMove',
+  'mobilizeUnits',
+  'collectIncome'
+];
+
+const PHASE_DISPLAY = {
+  developWeapons: 'Develop Weapons',
+  purchaseUnits: 'Purchase Units',
+  combatMove: 'Combat Move',
+  conductCombat: 'Conduct Combat',
+  noncombatMove: 'Noncombat Move',
+  mobilizeUnits: 'Mobilize New Units',
+  collectIncome: 'Collect Income'
+};
+
+function deepClone(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+// --- State initialization ---
+
+function initGameState(gameData, houseRules) {
+  const territories = {};
+  Object.entries(gameData.territories).forEach(([name, t]) => {
+    territories[name] = {
+      name: name,
+      isSea: t.isSea,
+      owner: t.originalOwner,
+      income: t.income,
+      isVictoryCity: t.isVictoryCity,
+      units: []
+    };
+  });
+
+  let unitIdCounter = 1;
+  Object.entries(gameData.startingSetup).forEach(([territoryName, placements]) => {
+    placements.forEach(p => {
+      for (let i = 0; i < p.quantity; i++) {
+        territories[territoryName].units.push({
+          id: 'u' + (unitIdCounter++),
+          type: p.unitType,
+          owner: p.owner
+        });
+      }
+    });
+  });
+
+  const players = {};
+  gameData.players.forEach(p => {
+    const startingTechs = (houseRules.toggles.startingTechs && houseRules.toggles.startingTechs[p.id]) || [];
+    players[p.id] = {
+      id: p.id,
+      name: p.name,
+      side: p.side,
+      ipc: p.startingIPC,
+      techs: startingTechs.slice(),
+      isolationism: (p.id === 'Americans' && houseRules.toggles.usIsolationism.enabled)
+        ? { active: true, attackedByAxis: false }
+        : null
+    };
+  });
+
+  const anyTechResearchable = Object.values(houseRules.toggles.techs).some(t => t.researchable);
+  const activePhases = anyTechResearchable
+    ? PHASE_NAMES.slice()
+    : PHASE_NAMES.filter(p => p !== 'developWeapons');
+
+  return {
+    round: 1,
+    turnOrder: gameData.players.map(p => p.id),
+    currentPlayerIndex: 0,
+    activePhases: activePhases,
+    currentPhaseIndex: 0,
+    players: players,
+    territories: territories,
+    log: [{ round: 1, event: 'Game started' }]
+  };
+}
+
+// --- Turn sequencer ---
+
+function getCurrentPlayerId(state) {
+  return state.turnOrder[state.currentPlayerIndex];
+}
+
+function getCurrentPhase(state) {
+  return state.activePhases[state.currentPhaseIndex];
+}
+
+function canAct(state, playerId, phaseName) {
+  return getCurrentPlayerId(state) === playerId && getCurrentPhase(state) === phaseName;
+}
+
+function advancePhase(state) {
+  const next = deepClone(state);
+  const endingPlayerId = getCurrentPlayerId(state);
+  next.currentPhaseIndex++;
+
+  if (next.currentPhaseIndex >= next.activePhases.length) {
+    next.currentPhaseIndex = 0;
+    next.log.push({ round: next.round, event: endingPlayerId + ' ended turn' });
+    next.currentPlayerIndex++;
+
+    if (next.currentPlayerIndex >= next.turnOrder.length) {
+      next.currentPlayerIndex = 0;
+      next.round++;
+      next.log.push({ round: next.round, event: 'Round ' + next.round + ' begins' });
+    }
+  }
+  return next;
+}
+
+// --- Submarine Concealment (house rule, digital-adaptation mechanic) ---
+
+function buildAdjacencyMap(gameData) {
+  const adj = {};
+  Object.entries(gameData.territories).forEach(([name, t]) => {
+    adj[name] = t.connections;
+  });
+  return adj;
+}
+
+function seaZonesWithinRadius(startTerritory, radius, adjacencyMap, gameData) {
+  const visited = new Set([startTerritory]);
+  let frontier = [startTerritory];
+  const withinRadius = new Set();
+
+  for (let step = 0; step < radius; step++) {
+    const nextFrontier = [];
+    frontier.forEach(t => {
+      (adjacencyMap[t] || []).forEach(neighbor => {
+        const nt = gameData.territories[neighbor];
+        if (!nt || !nt.isSea) return;
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          withinRadius.add(neighbor);
+          nextFrontier.push(neighbor);
+        }
+      });
+    });
+    frontier = nextFrontier;
+  }
+  return withinRadius;
+}
+
+function isSubmarineDetected(state, subTerritoryName, subOwnerId, viewerPlayerId, gameData, houseRules) {
+  const subOwnerSide = gameData.players.find(p => p.id === subOwnerId).side;
+  const viewerSide = gameData.players.find(p => p.id === viewerPlayerId).side;
+
+  if (subOwnerSide === viewerSide) return true;
+  if (!houseRules.toggles.submarineConcealment.enabled) return true;
+
+  const radius = houseRules.toggles.submarineConcealment.detectionRadius;
+  const adjacencyMap = buildAdjacencyMap(gameData);
+  const nearbyZones = seaZonesWithinRadius(subTerritoryName, radius, adjacencyMap, gameData);
+  nearbyZones.add(subTerritoryName);
+
+  for (const zoneName of nearbyZones) {
+    const zone = state.territories[zoneName];
+    if (!zone) continue;
+    const hasDestroyer = zone.units.some(u => u.type === 'destroyer' && u.owner === viewerPlayerId);
+    if (hasDestroyer) return true;
+  }
+  return false;
+}
+
+// --- Per-player filtered view ---
+// Returns a deep-cloned state with undetected enemy submarines removed.
+// This is what should actually be sent to each player's client in multiplayer.
+
+function getPlayerView(state, viewerPlayerId, gameData, houseRules) {
+  const view = deepClone(state);
+  Object.values(view.territories).forEach(t => {
+    t.units = t.units.filter(function (u) {
+      if (u.type !== 'submarine') return true;
+      if (u.owner === viewerPlayerId) return true;
+      return isSubmarineDetected(state, t.name, u.owner, viewerPlayerId, gameData, houseRules);
+    });
+  });
+  return view;
+}
+
+// --- Exports (attach to global scope for plain <script> usage) ---
+
+const GameEngine = {
+  PHASE_NAMES,
+  PHASE_DISPLAY,
+  initGameState,
+  getCurrentPlayerId,
+  getCurrentPhase,
+  canAct,
+  advancePhase,
+  isSubmarineDetected,
+  getPlayerView,
+  deepClone
+};
+
+</script>
+<script>
+let state = GameEngine.initGameState(GAME_DATA, HOUSE_RULES);
+let viewerPlayerId = state.turnOrder[0];
+
+const viewerSelect = document.getElementById('viewerSelect');
+GAME_DATA.players.forEach(p => {
+  const opt = document.createElement('option');
+  opt.value = p.id; opt.textContent = p.name + ' (' + p.side + ')';
+  viewerSelect.appendChild(opt);
+});
+viewerSelect.value = viewerPlayerId;
+viewerSelect.addEventListener('change', e => {
+  viewerPlayerId = e.target.value;
+  render();
+});
+
+document.getElementById('nextPhaseBtn').addEventListener('click', () => {
+  state = GameEngine.advancePhase(state);
+  render();
+});
+
+function render() {
+  const currentId = GameEngine.getCurrentPlayerId(state);
+  const currentPlayer = GAME_DATA.players.find(p => p.id === currentId);
+  document.getElementById('currentPlayer').textContent = currentPlayer.name;
+  document.getElementById('currentPhase').textContent = GameEngine.PHASE_DISPLAY[GameEngine.getCurrentPhase(state)];
+  document.getElementById('roundInfo').textContent = 'Round ' + state.round + ' · Turn order: ' + state.turnOrder.map(id => GAME_DATA.players.find(p=>p.id===id).name).join(' → ');
+
+  const viewerPlayer = GAME_DATA.players.find(p => p.id === viewerPlayerId);
+  document.getElementById('viewerSideInfo').textContent = 'Viewing as ' + viewerPlayer.side + '. Enemy submarines not near a friendly (to viewer) destroyer will be hidden below.';
+
+  // Player view (filters hidden subs)
+  const view = GameEngine.getPlayerView(state, viewerPlayerId, GAME_DATA, HOUSE_RULES);
+
+  // Show all sea zones with subs in the FULL state, and mark which are visible in the view
+  let subHtml = '';
+  Object.values(state.territories).forEach(t => {
+    if (!t.isSea) return;
+    const subsHere = t.units.filter(u => u.type === 'submarine');
+    if (subsHere.length === 0) return;
+    const visibleHere = view.territories[t.name].units.filter(u => u.type === 'submarine');
+    subsHere.forEach(sub => {
+      const isVisible = visibleHere.some(v => v.id === sub.id);
+      const ownerName = GAME_DATA.players.find(p => p.id === sub.owner).name;
+      if (isVisible) {
+        subHtml += `<div class="territory-row">${t.name}: ${ownerName} submarine — <b>visible</b></div>`;
+      } else {
+        subHtml += `<div class="territory-row sub-hidden">${t.name}: enemy submarine — hidden (no destroyer within ${HOUSE_RULES.toggles.submarineConcealment.detectionRadius} zones)</div>`;
+      }
+    });
+  });
+  document.getElementById('subVisibility').innerHTML = subHtml || '<div style="color:#888; font-size:13px;">No submarines on the board.</div>';
+
+  // Players table
+  let pHtml = document.getElementById('playersTable').innerHTML.split('</tr>')[0] + '</tr>';
+  state.turnOrder.forEach(id => {
+    const sp = state.players[id];
+    const gp = GAME_DATA.players.find(p => p.id === id);
+    const highlight = id === currentId ? ' style="font-weight:700;"' : '';
+    pHtml += `<tr${highlight}><td>${gp.name}</td><td>${sp.ipc}</td><td>${sp.side}</td></tr>`;
+  });
+  document.getElementById('playersTable').innerHTML = pHtml;
+
+  // Log
+  document.getElementById('logList').innerHTML = state.log.slice().reverse().map(l =>
+    `<div class="log-entry">Round ${l.round}: ${l.event}</div>`
+  ).join('');
+}
+
+render();
+</script>
+
+</body>
+</html>
